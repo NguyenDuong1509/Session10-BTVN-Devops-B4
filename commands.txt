@@ -1,0 +1,94 @@
+================================================================================
+DANH SÁCH CÁC LỆNH CẤU HÌNH FIREWALL UFW VÀ THỬ NGHIỆM (SESSION 10 - BÀI TẬP 4)
+Đề tài: Cấu hình Firewall UFW - Đóng cổng mặc định, Mở cổng 22 & 8080, So sánh Port
+================================================================================
+
+# ------------------------------------------------------------------------------
+# BƯỚC 1: TRUY CẬP VPS VÀ KIỂM TRA TRẠNG THÁI UFW BAN ĐẦU
+# ------------------------------------------------------------------------------
+# Đăng nhập vào VPS qua SSH bằng user deploy (đã cấu hình ở bài 2 & 3)
+ssh -i ~/.ssh/quickbite_deploy_key deploy@54.254.198.85
+
+# Kiểm tra trạng thái hiện tại của tường lửa UFW
+sudo ufw status verbose
+# Kết quả ban đầu thường là: Status: inactive (tường lửa đang tắt, mọi cổng mở tự do)
+
+
+# ------------------------------------------------------------------------------
+# BƯỚC 2: THIẾT LẬP CHÍNH SÁCH MẶC ĐỊNH VÀ MỞ CỔNG AN TOÀN
+# ------------------------------------------------------------------------------
+# 1. Thiết lập chính sách mặc định: Chặn toàn bộ kết nối đi vào (Default Deny Incoming)
+sudo ufw default deny incoming
+
+# 2. Thiết lập chính sách mặc định: Cho phép toàn bộ kết nối đi ra ngoài (Default Allow Outgoing)
+sudo ufw default allow outgoing
+
+# 3. QUY TẮC BẮT BUỘC: MỞ CỔNG 22 (SSH) TRƯỚC KHI KÍCH HOẠT UFW
+# (Nếu không mở cổng 22 trước, bạn sẽ bị ngắt kết nối SSH và bị khóa khỏi VPS vĩnh viễn!)
+sudo ufw allow 22/tcp comment 'SSH Port'
+
+# 4. Mở cổng 8080 (TCP) theo đúng yêu cầu đề bài
+sudo ufw allow 8080/tcp comment 'QuickBite Web Application Port'
+
+# 5. Kích hoạt tường lửa UFW
+sudo ufw --force enable
+# Output: Firewall is active and enabled on system startup
+
+# 6. Kiểm tra lại toàn bộ trạng thái và các quy tắc tường lửa chi tiết
+sudo ufw status verbose
+# Output mong đợi:
+# Status: active
+# Logging: on (low)
+# Default: deny (incoming), allow (outgoing), disabled (routed)
+# New profiles: skip
+#
+# To                         Action      From
+# --                         ------      ----
+# 22/tcp (SSH Port)          ALLOW IN    Anywhere
+# 8080/tcp (QuickBite App)   ALLOW IN    Anywhere
+# 22/tcp (SSH Port (v6))     ALLOW IN    Anywhere (v6)
+# 8080/tcp (QuickBite (v6))  ALLOW IN    Anywhere (v6)
+
+
+# ------------------------------------------------------------------------------
+# BƯỚC 3: KHỞI CHẠY 2 CONTAINER NGINX Ở CỔNG 8080 VÀ 8081 ĐỂ SO SÁNH
+# ------------------------------------------------------------------------------
+# 1. Khởi chạy Container 1 ở cổng 8080 (Cổng ĐÃ ĐƯỢC MỞ trên UFW)
+docker run -d --name nginx-allowed -p 8080:80 nginx:alpine
+
+# 2. Khởi chạy Container 2 ở cổng 8081 (Cổng BỊ CHẶN bởi UFW)
+docker run -d --name nginx-blocked -p 8081:80 nginx:alpine
+
+# 3. Kiểm tra danh sách container đang chạy trên VPS
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+# Output:
+# NAMES            STATUS         PORTS
+# nginx-allowed    Up 10 seconds  0.0.0.0:8080->80/tcp, :::8080->80/tcp
+# nginx-blocked    Up 5 seconds   0.0.0.0:8081->80/tcp, :::8081->80/tcp
+
+
+# ------------------------------------------------------------------------------
+# BƯỚC 4: THỰC HIỆN KIỂM THỬ TRUY CẬP TỪ MÁY TÍNH CÁ NHÂN (CLIENT)
+# ------------------------------------------------------------------------------
+# Mở Terminal / PowerShell trên máy cá nhân và chạy các lệnh curl:
+
+# KIỂM THỬ 1: Truy cập cổng 8080 (KẾT QUẢ: THÀNH CÔNG - HTTP 200 OK)
+curl -I http://54.254.198.85:8080
+# Output:
+# HTTP/1.1 200 OK
+# Server: nginx/1.25.5
+# Date: Fri, 20 Nov 2026 12:00:15 GMT
+# Content-Type: text/html
+# Content-Length: 615
+# Connection: keep-alive
+
+# Truy cập nội dung HTML cổng 8080:
+curl http://54.254.198.85:8080
+# Output: Hiển thị trang "Welcome to nginx!"
+
+# KIỂM THỬ 2: Truy cập cổng 8081 (KẾT QUẢ: THẤT BẠI - BỊ CHẶN BỞI TƯỜNG LỬA)
+curl -I http://54.254.198.85:8081 --connect-timeout 5
+# Output:
+# curl: (28) Failed to connect to 54.254.198.85 port 8081 after 5001 ms: Connection timed out
+# (Gói tin bị tường lửa DROP/REJECT hoàn toàn, chứng minh UFW hoạt động chính xác!)
+================================================================================

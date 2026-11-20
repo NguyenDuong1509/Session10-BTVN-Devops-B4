@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  nginx-allowed:
+    image: nginx:alpine
+    container_name: nginx-allowed
+    restart: always
+    ports:
+      - "8080:80"
+
+  nginx-blocked:
+    image: nginx:alpine
+    container_name: nginx-blocked
+    restart: always
+    ports:
+      - "8081:80"
